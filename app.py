@@ -1,3 +1,22 @@
+Yes — those are all good refinements, and Streamlit supports the display formatting and sidebar styling you want. st.number_input can format values to two decimals, and the sidebar appearance can be adjusted with CSS or theme settings so the dropdowns are easier to read.
+
+What I’m changing
+Limit decimals to the hundredths place.
+
+Show $ on dollar fields and % on percentage fields where appropriate.
+
+Remove the monthly commission section entirely.
+
+Rename Annual Commission to Total Commission.
+
+Save deals by deal name.
+
+Darken the saved deals sidebar so the dropdown is easier to read.
+
+Updated app code
+Replace your app.py with this version:
+
+python
 import sqlite3
 import json
 from datetime import datetime
@@ -17,8 +36,12 @@ st.set_page_config(page_title="Commission Calculator", layout="wide", page_icon=
 st.markdown(
     """
     <style>
-    .stApp { background: linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%); }
-    .block-container { padding-top: 1.5rem; }
+    .stApp {
+        background: linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
+    }
+    .block-container {
+        padding-top: 1.5rem;
+    }
     div[data-testid="stMetric"] {
         background: white;
         border: 1px solid #e5e7eb;
@@ -26,8 +49,27 @@ st.markdown(
         border-radius: 16px;
         box-shadow: 0 6px 18px rgba(15,23,42,.06);
     }
-    section[data-testid="stSidebar"] { background: #0f172a; }
-    section[data-testid="stSidebar"] * { color: #e2e8f0; }
+    section[data-testid="stSidebar"] {
+        background: #0f172a !important;
+    }
+    section[data-testid="stSidebar"] * {
+        color: #e2e8f0 !important;
+    }
+    section[data-testid="stSidebar"] .stSelectbox label,
+    section[data-testid="stSidebar"] .stTextInput label,
+    section[data-testid="stSidebar"] .stButton button {
+        color: #e2e8f0 !important;
+    }
+    section[data-testid="stSidebar"] .stSelectbox div,
+    section[data-testid="stSidebar"] .stTextInput input {
+        color: #0f172a !important;
+    }
+    section[data-testid="stSidebar"] .stSelectbox [data-baseweb="select"] > div {
+        background-color: #f8fafc !important;
+    }
+    section[data-testid="stSidebar"] .stSelectbox svg {
+        fill: #0f172a !important;
+    }
     .card {
         background: white;
         padding: 18px 20px;
@@ -49,7 +91,7 @@ def init_db():
             """
             CREATE TABLE IF NOT EXISTS deals (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
+                name TEXT NOT NULL UNIQUE,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 payload TEXT NOT NULL
@@ -58,25 +100,22 @@ def init_db():
         )
         conn.commit()
 
-def save_deal(name, payload):
+def save_or_update_deal(name, payload):
     now = datetime.now().isoformat(timespec="seconds")
     with get_conn() as conn:
-        conn.execute(
-            "INSERT INTO deals (name, created_at, updated_at, payload) VALUES (?, ?, ?, ?)",
-            (name, now, now, json.dumps(payload)),
-        )
+        existing = conn.execute("SELECT id FROM deals WHERE name = ?", (name,)).fetchone()
+        if existing:
+            conn.execute(
+                "UPDATE deals SET updated_at = ?, payload = ? WHERE name = ?",
+                (now, json.dumps(payload), name),
+            )
+        else:
+            conn.execute(
+                "INSERT INTO deals (name, created_at, updated_at, payload) VALUES (?, ?, ?, ?)",
+                (name, now, now, json.dumps(payload)),
+            )
         conn.commit()
 
-def update_deal(deal_id, name, payload):
-    now = datetime.now().isoformat(timespec="seconds")
-    with get_conn() as conn:
-        conn.execute(
-            "UPDATE deals SET name = ?, updated_at = ?, payload = ? WHERE id = ?",
-            (name, now, json.dumps(payload), deal_id),
-        )
-        conn.commit()
-
-@st.cache_data(ttl=5)
 def load_deals():
     with get_conn() as conn:
         return pd.read_sql_query(
@@ -84,11 +123,11 @@ def load_deals():
             conn,
         )
 
-def get_deal(deal_id):
+def get_deal_by_name(name):
     with get_conn() as conn:
         row = conn.execute(
-            "SELECT id, name, created_at, updated_at, payload FROM deals WHERE id = ?",
-            (deal_id,),
+            "SELECT id, name, created_at, updated_at, payload FROM deals WHERE name = ?",
+            (name,),
         ).fetchone()
     if not row:
         return None
@@ -121,30 +160,21 @@ def calc_schedule(sf, base_rent_psf, term_years, fee_pct, esc_type, esc_amt, esc
                     current_rent *= (1 + esc_amt / 100)
 
         annual_rent = current_rent * sf
-        monthly_rent = annual_rent / 12
         annual_commission = annual_rent * (fee_pct / 100)
-        monthly_commission = monthly_rent * (fee_pct / 100)
 
         rows.append(
             {
                 "Year": year,
-                "Rent PSF": round(current_rent, 4),
+                "Rent PSF": round(current_rent, 2),
                 "Annual Rent": round(annual_rent, 2),
-                "Monthly Rent": round(monthly_rent, 2),
-                "Annual Commission": round(annual_commission, 2),
-                "Monthly Commission": round(monthly_commission, 2),
+                "Total Commission": round(annual_commission, 2),
             }
         )
 
     df = pd.DataFrame(rows)
-    return (
-        df,
-        round(df["Annual Rent"].sum(), 2),
-        round(df["Annual Commission"].sum(), 2),
-        round(df["Monthly Commission"].sum(), 2),
-    )
+    return df, round(df["Annual Rent"].sum(), 2), round(df["Total Commission"].sum(), 2)
 
-def build_pdf(title, inputs, schedule_df, total_base_rent, total_annual_commission, total_monthly_commission):
+def build_pdf(title, inputs, schedule_df, total_base_rent, total_commission):
     buffer = BytesIO()
     doc = SimpleDocTemplate(
         buffer,
@@ -159,13 +189,12 @@ def build_pdf(title, inputs, schedule_df, total_base_rent, total_annual_commissi
 
     summary = [
         ["Deal Name", inputs["deal_name"]],
-        ["SF", f'{inputs["sf"]:,.0f}'],
-        ["Term", f'{inputs["term_years"]} years'],
+        ["SF", f'{inputs["sf"]:,.2f}'],
+        ["Term", f'{inputs["term_years"]:.2f} years'],
         ["Fee %", f'{inputs["fee_pct"]:.2f}%'],
         ["Escalation", inputs["esc_type"]],
         ["Total Base Rent", f'${total_base_rent:,.2f}'],
-        ["Total Annual Commission", f'${total_annual_commission:,.2f}'],
-        ["Total Monthly Commission", f'${total_monthly_commission:,.2f}'],
+        ["Total Commission", f'${total_commission:,.2f}'],
     ]
 
     summary_tbl = Table(summary, colWidths=[160, 330])
@@ -216,9 +245,9 @@ st.markdown(
 with st.sidebar:
     st.header("Saved Deals")
     if len(df_deals):
-        selected = st.selectbox("Load deal", [""] + [f'{r.id} | {r.name}' for _, r in df_deals.iterrows()])
+        selected = st.selectbox("Load deal", [""] + df_deals["name"].tolist())
         if st.button("Load Selected") and selected:
-            st.session_state.loaded_deal = get_deal(int(selected.split("|")[0]))
+            st.session_state.loaded_deal = get_deal_by_name(selected)
             st.cache_data.clear()
             st.rerun()
     else:
@@ -231,16 +260,40 @@ payload = st.session_state.loaded_deal["payload"] if st.session_state.loaded_dea
 
 with st.form("deal_form"):
     tabs = st.tabs(["Deal Inputs", "Escalation", "Results"])
+
     with tabs[0]:
         c1, c2 = st.columns(2)
         with c1:
             deal_name = st.text_input("Deal Name", value=payload.get("deal_name", ""))
-            sf = st.number_input("Square Feet (SF)", min_value=0.0, step=100.0, value=float(payload.get("sf", 0.0)))
-            base_rent_psf = st.number_input("Base Rent PSF", min_value=0.0, step=0.25, format="%.4f", value=float(payload.get("base_rent_psf", 0.0)))
+            sf = st.number_input(
+                "Square Feet (SF)",
+                min_value=0.0,
+                step=100.0,
+                format="%.2f",
+                value=float(payload.get("sf", 0.0)),
+            )
+            base_rent_psf = st.number_input(
+                "Base Rent PSF ($)",
+                min_value=0.0,
+                step=0.01,
+                format="%.2f",
+                value=float(payload.get("base_rent_psf", 0.0)),
+            )
         with c2:
-            term_years = st.number_input("Term Length (Years)", min_value=1, step=1, value=int(payload.get("term_years", 5)))
-            fee_pct = st.number_input("Fee %", min_value=0.0, step=0.1, format="%.4f", value=float(payload.get("fee_pct", 3.0)))
-            calc_basis = st.radio("Commission Basis", ["Annual", "Monthly"], horizontal=True, index=0 if payload.get("calc_basis", "Annual") == "Annual" else 1)
+            term_years = st.number_input(
+                "Term Length (Years)",
+                min_value=1,
+                step=1,
+                format="%.2f",
+                value=float(payload.get("term_years", 5)),
+            )
+            fee_pct = st.number_input(
+                "Fee %",
+                min_value=0.0,
+                step=0.01,
+                format="%.2f",
+                value=float(payload.get("fee_pct", 3.0)),
+            )
 
     with tabs[1]:
         c3, c4 = st.columns(2)
@@ -250,35 +303,58 @@ with st.form("deal_form"):
                 ["Flat", "Annual %", "Every N Years %", "Flat Then Annual %", "Flat Then Every N Years %"],
                 index=["Flat", "Annual %", "Every N Years %", "Flat Then Annual %", "Flat Then Every N Years %"].index(payload.get("esc_type", "Annual %")),
             )
-            esc_amt = st.number_input("Increase %", min_value=0.0, step=0.1, format="%.4f", value=float(payload.get("esc_amt", 3.0)))
+            esc_amt = st.number_input(
+                "Increase %",
+                min_value=0.0,
+                step=0.01,
+                format="%.2f",
+                value=float(payload.get("esc_amt", 3.0)),
+            )
         with c4:
-            esc_freq = st.number_input("Increase Every N Years", min_value=1, step=1, value=int(payload.get("esc_freq", 5)))
-            flat_years = st.number_input("Flat Years Before Increases", min_value=0, step=1, value=int(payload.get("flat_years", 0)))
+            esc_freq = st.number_input(
+                "Increase Every N Years",
+                min_value=1,
+                step=1,
+                format="%.2f",
+                value=float(payload.get("esc_freq", 5)),
+            )
+            flat_years = st.number_input(
+                "Flat Years Before Increases",
+                min_value=0,
+                step=1,
+                format="%.2f",
+                value=float(payload.get("flat_years", 0)),
+            )
 
     submit = st.form_submit_button("Calculate")
 
 if submit:
     inputs = {
-        "deal_name": deal_name,
+        "deal_name": deal_name.strip(),
         "sf": sf,
         "base_rent_psf": base_rent_psf,
         "term_years": int(term_years),
         "fee_pct": fee_pct,
-        "calc_basis": calc_basis,
         "esc_type": esc_type,
         "esc_amt": esc_amt,
         "esc_freq": int(esc_freq),
         "flat_years": int(flat_years),
     }
-    schedule_df, total_base_rent, total_annual_commission, total_monthly_commission = calc_schedule(
-        sf, base_rent_psf, int(term_years), fee_pct, esc_type, esc_amt, int(esc_freq), int(flat_years)
+    schedule_df, total_base_rent, total_commission = calc_schedule(
+        sf,
+        base_rent_psf,
+        int(term_years),
+        fee_pct,
+        esc_type,
+        esc_amt,
+        int(esc_freq),
+        int(flat_years),
     )
     st.session_state.last_calc = {
         "inputs": inputs,
         "schedule_df": schedule_df,
         "total_base_rent": total_base_rent,
-        "total_annual_commission": total_annual_commission,
-        "total_monthly_commission": total_monthly_commission,
+        "total_commission": total_commission,
     }
 
 if st.session_state.last_calc:
@@ -286,18 +362,14 @@ if st.session_state.last_calc:
     inputs = calc["inputs"]
     schedule_df = calc["schedule_df"]
     total_base_rent = calc["total_base_rent"]
-    total_annual_commission = calc["total_annual_commission"]
-    total_monthly_commission = calc["total_monthly_commission"]
+    total_commission = calc["total_commission"]
 
     st.markdown("### Results")
     a, b, c, d = st.columns(4)
     a.metric("Total Base Rent", f"${total_base_rent:,.2f}")
-    b.metric("Annual Commission", f"${total_annual_commission:,.2f}")
-    c.metric("Monthly Commission", f"${total_monthly_commission:,.2f}")
-    d.metric("Term", f"{inputs['term_years']} years")
-
-    if inputs["calc_basis"] == "Monthly":
-        st.info("Monthly commission is shown as the monthly equivalent of the annual rent schedule.")
+    b.metric("Total Commission", f"${total_commission:,.2f}")
+    c.metric("Term", f"{inputs['term_years']:.2f} years")
+    d.metric("Fee %", f"{inputs['fee_pct']:.2f}%")
 
     st.dataframe(schedule_df, use_container_width=True, hide_index=True)
 
@@ -315,8 +387,7 @@ if st.session_state.last_calc:
             inputs,
             schedule_df,
             total_base_rent,
-            total_annual_commission,
-            total_monthly_commission,
+            total_commission,
         )
         st.download_button(
             "Download Printable PDF",
@@ -329,14 +400,14 @@ if st.session_state.last_calc:
     save_name = st.text_input("Save As", value=inputs["deal_name"] or "Untitled Deal", key="save_name")
     csave1, csave2 = st.columns(2)
     with csave1:
-        if st.button("Save New Deal"):
-            save_deal(save_name, inputs)
+        if st.button("Save Deal"):
+            save_or_update_deal(save_name, inputs)
             st.cache_data.clear()
             st.success("Deal saved.")
             st.rerun()
     with csave2:
         if st.session_state.loaded_deal and st.button("Update Loaded Deal"):
-            update_deal(st.session_state.loaded_deal["id"], save_name, inputs)
+            save_or_update_deal(save_name, inputs)
             st.cache_data.clear()
             st.success("Deal updated.")
             st.rerun()
