@@ -234,28 +234,25 @@ with st.sidebar:
 payload = st.session_state.loaded_deal["payload"] if st.session_state.loaded_deal else {}
 
 with st.form("deal_form"):
-    tabs = st.tabs(["Deal Inputs", "Escalation"])
-    with tabs[0]:
-        c1, c2 = st.columns(2)
-        with c1:
-            deal_name = st.text_input("Deal Name", value=payload.get("deal_name", ""))
-            sf = st.number_input("Square Feet (SF)", min_value=0.0, step=100.0, format="%.2f", value=float(payload.get("sf", 0.0)))
-            base_rent_psf = st.number_input("Base Rent PSF ($)", min_value=0.0, step=0.01, format="%.2f", value=float(payload.get("base_rent_psf", 0.0)))
-        with c2:
-            term_years = st.number_input("Term Length (Years)", min_value=1, step=1, format="%.2f", value=float(payload.get("term_years", 5)))
-            fee_pct = st.number_input("Fee %", min_value=0.0, step=0.01, format="%.2f", value=float(payload.get("fee_pct", 3.0)))
-    with tabs[1]:
-        c3, c4 = st.columns(2)
-        with c3:
-            esc_type = st.selectbox(
-                "Escalation Type",
-                ["Flat", "Annual %", "Every N Years %", "Flat Then Annual %", "Flat Then Every N Years %"],
-                index=["Flat", "Annual %", "Every N Years %", "Flat Then Annual %", "Flat Then Every N Years %"].index(payload.get("esc_type", "Annual %")),
-            )
-            esc_amt = st.number_input("Increase %", min_value=0.0, step=0.01, format="%.2f", value=float(payload.get("esc_amt", 3.0)))
-        with c4:
-            esc_freq = st.number_input("Increase Every N Years", min_value=1, step=1, format="%.2f", value=float(payload.get("esc_freq", 5)))
-            flat_years = st.number_input("Flat Years Before Increases", min_value=0, step=1, format="%.2f", value=float(payload.get("flat_years", 0)))
+    c1, c2 = st.columns(2)
+
+    with c1:
+        deal_name = st.text_input("Deal Name", value=payload.get("deal_name", ""))
+        sf = st.number_input("Square Feet (SF)", min_value=0.0, step=100.0, format="%.2f", value=float(payload.get("sf", 0.0)))
+        base_rent_psf = st.number_input("Base Rent PSF ($)", min_value=0.0, step=0.01, format="%.2f", value=float(payload.get("base_rent_psf", 0.0)))
+        term_years = st.number_input("Term Length (Years)", min_value=1, step=1, value=int(payload.get("term_years", 5)))
+
+    with c2:
+        fee_pct = st.number_input("Fee %", min_value=0.0, step=0.01, format="%.2f", value=float(payload.get("fee_pct", 3.0)))
+        esc_type = st.selectbox(
+            "Escalation Type",
+            ["Flat", "Annual %", "Every N Years %", "Flat Then Annual %", "Flat Then Every N Years %"],
+            index=["Flat", "Annual %", "Every N Years %", "Flat Then Annual %", "Flat Then Every N Years %"].index(payload.get("esc_type", "Annual %")),
+        )
+        esc_amt = st.number_input("Increase %", min_value=0.0, step=0.01, format="%.2f", value=float(payload.get("esc_amt", 3.0)))
+        esc_freq = st.number_input("Increase Every N Years", min_value=1, step=1, value=int(payload.get("esc_freq", 5)))
+        flat_years = st.number_input("Flat Years Before Increases", min_value=0, step=1, value=int(payload.get("flat_years", 0)))
+
     submit = st.form_submit_button("Calculate")
 
 if submit:
@@ -291,7 +288,7 @@ if st.session_state.last_calc:
     a, b, c, d = st.columns(4)
     a.metric("Total Base Rent", f"${total_base_rent:,.2f}")
     b.metric("Total Commission", f"${total_commission:,.2f}")
-    c.metric("Term", f"{inputs['term_years']:.2f} years")
+    c.metric("Term", f"{inputs['term_years']} years")
     d.metric("Fee %", f"{inputs['fee_pct']:.2f}%")
 
     st.dataframe(schedule_df, use_container_width=True, hide_index=True)
