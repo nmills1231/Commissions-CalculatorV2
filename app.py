@@ -1,22 +1,3 @@
-Yes — those are all good refinements, and Streamlit supports the display formatting and sidebar styling you want. st.number_input can format values to two decimals, and the sidebar appearance can be adjusted with CSS or theme settings so the dropdowns are easier to read.
-
-What I’m changing
-Limit decimals to the hundredths place.
-
-Show $ on dollar fields and % on percentage fields where appropriate.
-
-Remove the monthly commission section entirely.
-
-Rename Annual Commission to Total Commission.
-
-Save deals by deal name.
-
-Darken the saved deals sidebar so the dropdown is easier to read.
-
-Updated app code
-Replace your app.py with this version:
-
-python
 import sqlite3
 import json
 from datetime import datetime
