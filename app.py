@@ -36,17 +36,10 @@ st.markdown(
     section[data-testid="stSidebar"] * {
         color: #e2e8f0 !important;
     }
-    section[data-testid="stSidebar"] .stSelectbox label,
-    section[data-testid="stSidebar"] .stTextInput label,
-    section[data-testid="stSidebar"] .stButton button {
-        color: #e2e8f0 !important;
-    }
-    section[data-testid="stSidebar"] .stSelectbox div,
+    section[data-testid="stSidebar"] .stSelectbox [data-baseweb="select"] > div,
     section[data-testid="stSidebar"] .stTextInput input {
-        color: #0f172a !important;
-    }
-    section[data-testid="stSidebar"] .stSelectbox [data-baseweb="select"] > div {
         background-color: #f8fafc !important;
+        color: #0f172a !important;
     }
     section[data-testid="stSidebar"] .stSelectbox svg {
         fill: #0f172a !important;
@@ -97,6 +90,7 @@ def save_or_update_deal(name, payload):
             )
         conn.commit()
 
+@st.cache_data(ttl=5)
 def load_deals():
     with get_conn() as conn:
         return pd.read_sql_query(
@@ -146,14 +140,14 @@ def calc_schedule(sf, base_rent_psf, term_years, fee_pct, esc_type, esc_amt, esc
         rows.append(
             {
                 "Year": year,
-                "Rent PSF": round(current_rent, 2),
-                "Annual Rent": round(annual_rent, 2),
-                "Total Commission": round(annual_commission, 2),
+                "Rent PSF ($)": round(current_rent, 2),
+                "Annual Rent ($)": round(annual_rent, 2),
+                "Total Commission ($)": round(annual_commission, 2),
             }
         )
 
     df = pd.DataFrame(rows)
-    return df, round(df["Annual Rent"].sum(), 2), round(df["Total Commission"].sum(), 2)
+    return df, round(df["Annual Rent ($)"].sum(), 2), round(df["Total Commission ($)"].sum(), 2)
 
 def build_pdf(title, inputs, schedule_df, total_base_rent, total_commission):
     buffer = BytesIO()
@@ -240,42 +234,16 @@ with st.sidebar:
 payload = st.session_state.loaded_deal["payload"] if st.session_state.loaded_deal else {}
 
 with st.form("deal_form"):
-    tabs = st.tabs(["Deal Inputs", "Escalation", "Results"])
-
+    tabs = st.tabs(["Deal Inputs", "Escalation"])
     with tabs[0]:
         c1, c2 = st.columns(2)
         with c1:
             deal_name = st.text_input("Deal Name", value=payload.get("deal_name", ""))
-            sf = st.number_input(
-                "Square Feet (SF)",
-                min_value=0.0,
-                step=100.0,
-                format="%.2f",
-                value=float(payload.get("sf", 0.0)),
-            )
-            base_rent_psf = st.number_input(
-                "Base Rent PSF ($)",
-                min_value=0.0,
-                step=0.01,
-                format="%.2f",
-                value=float(payload.get("base_rent_psf", 0.0)),
-            )
+            sf = st.number_input("Square Feet (SF)", min_value=0.0, step=100.0, format="%.2f", value=float(payload.get("sf", 0.0)))
+            base_rent_psf = st.number_input("Base Rent PSF ($)", min_value=0.0, step=0.01, format="%.2f", value=float(payload.get("base_rent_psf", 0.0)))
         with c2:
-            term_years = st.number_input(
-                "Term Length (Years)",
-                min_value=1,
-                step=1,
-                format="%.2f",
-                value=float(payload.get("term_years", 5)),
-            )
-            fee_pct = st.number_input(
-                "Fee %",
-                min_value=0.0,
-                step=0.01,
-                format="%.2f",
-                value=float(payload.get("fee_pct", 3.0)),
-            )
-
+            term_years = st.number_input("Term Length (Years)", min_value=1, step=1, format="%.2f", value=float(payload.get("term_years", 5)))
+            fee_pct = st.number_input("Fee %", min_value=0.0, step=0.01, format="%.2f", value=float(payload.get("fee_pct", 3.0)))
     with tabs[1]:
         c3, c4 = st.columns(2)
         with c3:
@@ -284,29 +252,10 @@ with st.form("deal_form"):
                 ["Flat", "Annual %", "Every N Years %", "Flat Then Annual %", "Flat Then Every N Years %"],
                 index=["Flat", "Annual %", "Every N Years %", "Flat Then Annual %", "Flat Then Every N Years %"].index(payload.get("esc_type", "Annual %")),
             )
-            esc_amt = st.number_input(
-                "Increase %",
-                min_value=0.0,
-                step=0.01,
-                format="%.2f",
-                value=float(payload.get("esc_amt", 3.0)),
-            )
+            esc_amt = st.number_input("Increase %", min_value=0.0, step=0.01, format="%.2f", value=float(payload.get("esc_amt", 3.0)))
         with c4:
-            esc_freq = st.number_input(
-                "Increase Every N Years",
-                min_value=1,
-                step=1,
-                format="%.2f",
-                value=float(payload.get("esc_freq", 5)),
-            )
-            flat_years = st.number_input(
-                "Flat Years Before Increases",
-                min_value=0,
-                step=1,
-                format="%.2f",
-                value=float(payload.get("flat_years", 0)),
-            )
-
+            esc_freq = st.number_input("Increase Every N Years", min_value=1, step=1, format="%.2f", value=float(payload.get("esc_freq", 5)))
+            flat_years = st.number_input("Flat Years Before Increases", min_value=0, step=1, format="%.2f", value=float(payload.get("flat_years", 0)))
     submit = st.form_submit_button("Calculate")
 
 if submit:
@@ -322,14 +271,7 @@ if submit:
         "flat_years": int(flat_years),
     }
     schedule_df, total_base_rent, total_commission = calc_schedule(
-        sf,
-        base_rent_psf,
-        int(term_years),
-        fee_pct,
-        esc_type,
-        esc_amt,
-        int(esc_freq),
-        int(flat_years),
+        sf, base_rent_psf, int(term_years), fee_pct, esc_type, esc_amt, int(esc_freq), int(flat_years)
     )
     st.session_state.last_calc = {
         "inputs": inputs,
@@ -363,13 +305,7 @@ if st.session_state.last_calc:
             "text/csv",
         )
     with coly:
-        pdf = build_pdf(
-            inputs["deal_name"] or "Deal Summary",
-            inputs,
-            schedule_df,
-            total_base_rent,
-            total_commission,
-        )
+        pdf = build_pdf(inputs["deal_name"] or "Deal Summary", inputs, schedule_df, total_base_rent, total_commission)
         st.download_button(
             "Download Printable PDF",
             pdf,
